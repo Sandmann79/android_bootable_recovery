@@ -209,17 +209,50 @@ int is_data_media() {
     return 0;
 }
 
+#ifdef BOARD_HAS_NO_MULTIUSER_SUPPORT
+static int is_migrated_storage = 0;
+#else
+static int is_migrated_storage = 1;
+#endif
+
+int use_migrated_storage() {
+    return is_migrated_storage;
+}
+
+static int check_migrated_storage() {
+    struct stat s;
+#ifdef BOARD_HAS_NO_MULTIUSER_SUPPORT
+    is_migrated_storage = (lstat("/data/media/0", &s) == 0 &&
+                          lstat("/data/media/.cwm_force_data_media", &s) != 0);
+#else
+    is_migrated_storage = (lstat("/data/media/.cwm_force_data_media", &s) != 0);
+#endif
+    return is_migrated_storage;
+}
+
 void setup_data_media() {
     int i;
+    char* mount_point = "/sdcard";
     for (i = 0; i < num_volumes; i++) {
         Volume* vol = device_volumes + i;
         if (strcmp(vol->fs_type, "datamedia") == 0) {
-            rmdir(vol->mount_point);
-            mkdir("/data/media", 0755);
-            symlink("/data/media", vol->mount_point);
-            return;
+            mount_point = vol->mount_point;
+            break;
         }
     }
+
+    // recreate /data/media with proper permissions
+    rmdir(mount_point);
+    mkdir("/data/media", S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+
+    // support /data/media/0 (Android 4.2+)
+    char* path = "/data/media";
+    if (check_migrated_storage()) {
+        path = "/data/media/0";
+        mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    }
+    symlink(path, mount_point);
+
 }
 
 int is_data_media_volume_path(const char* path) {
@@ -347,14 +380,6 @@ int ensure_path_unmounted(const char* path) {
 extern struct selabel_handle *sehandle;
 
 int format_volume(const char* volume) {
-    Volume* v = volume_for_path(volume);
-    if (v == NULL) {
-        // silent failure for sd-ext
-        if (strcmp(volume, "/sd-ext") == 0)
-            return -1;
-        LOGE("unknown volume \"%s\"\n", volume);
-        return -1;
-    }
     if (is_data_media_volume_path(volume)) {
         return format_unknown_device(NULL, volume, NULL);
     }
@@ -363,6 +388,16 @@ int format_volume(const char* volume) {
     if (strstr(volume, "/data") == volume && is_data_media() && !ignore_data_media) {
         return format_unknown_device(NULL, volume, NULL);
     }
+
+    Volume* v = volume_for_path(volume);
+    if (v == NULL) {
+        // silent failure for sd-ext
+        if (strcmp(volume, "/sd-ext") == 0)
+            return -1;
+        LOGE("unknown volume '%s'\n", volume);
+        return -1;
+    }
+
     if (strcmp(v->fs_type, "ramdisk") == 0) {
         // you can't format the ramdisk.
         LOGE("can't format_volume \"%s\"", volume);

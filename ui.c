@@ -233,6 +233,53 @@ static void draw_text_line(int row, const char* t) {
   }
 }
 
+#define LEFT_ALIGN 0
+#define CENTER_ALIGN 1
+#define RIGHT_ALIGN 2
+
+static void draw_text_line_aligned(int row, const char* t, int align) {
+  if (t[0] != '\0') {
+	int col = 0;
+	int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
+        switch(align) {
+            case LEFT_ALIGN:
+                col = 1;
+                break;
+            case CENTER_ALIGN:
+                col = ((gr_fb_width() - length) / 2);
+                break;
+            case RIGHT_ALIGN:
+                col = gr_fb_width() - length - 1;
+                break;
+    }
+    gr_text(col, (row+1)*CHAR_HEIGHT-1, t);
+  }
+}
+
+static int last_batt_level = -1;
+static int get_batt_stats(void) {
+    char value[6];
+
+    FILE* fp = fopen("/sys/class/power_supply/battery/capacity", "rt");
+    if (fp == NULL) {
+        last_batt_level = -2;
+        return last_batt_level;
+    }
+
+    if (fgets(value, sizeof(value), fp) != NULL) {
+        last_batt_level = atoi(value);
+        if (last_batt_level > 100)
+            last_batt_level = 100;
+        else if (last_batt_level < 0)
+            last_batt_level = 0;
+    } else {
+        last_batt_level = -3;
+    }
+
+    fclose(fp);
+    return last_batt_level;
+}
+
 //#define MENU_TEXT_COLOR 255, 160, 49, 255
 #define MENU_TEXT_COLOR 0, 191, 255, 255
 #define NORMAL_TEXT_COLOR 200, 200, 200, 255
@@ -240,6 +287,39 @@ static void draw_text_line(int row, const char* t) {
 
 // Redraw everything on the screen.  Does not flip pages.
 // Should only be called with gUpdateMutex locked.
+static void draw_battery_clock() {
+    // read battery % to display
+    int batt_level = 0;
+    batt_level = get_batt_stats();
+
+    // read current time for clock 
+    struct tm *timeptr;
+    time_t now;
+    now = time(NULL);
+    timeptr = localtime(&now);
+
+    // write battery % and clock
+    char batt_clock[40] = "";
+    sprintf(batt_clock, "%d%%", batt_level);
+
+    if (timeptr != NULL) {
+        char tmp[15];
+        char timeformat[15];
+        strftime(timeformat, sizeof(timeformat), "%H:%M", timeptr);
+        sprintf(tmp, "%s%s", strlen(batt_clock) == 0 ? "" : " ", timeformat);
+		gr_color(NORMAL_TEXT_COLOR);
+		draw_text_line_aligned(0, tmp, CENTER_ALIGN);
+    }
+
+    if (batt_level < 11)
+        gr_color(255,0,0,255);
+	else if (batt_level < 21)
+		gr_color(255,128,0,255);
+    else gr_color(50,205,50,255);
+
+    draw_text_line_aligned(0, batt_clock, RIGHT_ALIGN);
+}
+
 static void draw_screen_locked(void)
 {
     if (!ui_has_initialized) return;
@@ -255,6 +335,9 @@ static void draw_screen_locked(void)
         int i = 0;
         int j = 0;
         int row = 0;            // current row that we are drawing on
+
+		draw_battery_clock();
+
         if (show_menu) {
 #ifndef BOARD_TOUCH_RECOVERY
             gr_color(MENU_TEXT_COLOR);

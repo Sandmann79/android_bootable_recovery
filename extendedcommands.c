@@ -88,10 +88,16 @@ void write_string_to_file(const char* filename, const char* string) {
 }
 
 void write_recovery_version() {
-    if ( is_data_media() ) {
-        write_string_to_file("/sdcard/0/clockworkmod/.recovery_version",EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
+    struct stat st;
+    if (is_data_media()) {
+        if (0 == lstat("/data/media/0", &st))
+            write_string_to_file("/data/media/0/clockworkmod/.recovery_version",EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
+        write_string_to_file("/data/media/clockworkmod/.recovery_version",EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
+    } else {
+        if (volume_for_path("/emmc") != NULL)
+            write_string_to_file("/emmc/clockworkmod/.recovery_version",EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
+        else write_string_to_file("/sdcard/clockworkmod/.recovery_version",EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
     }
-    write_string_to_file("/sdcard/clockworkmod/.recovery_version",EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
 }
 
 void
@@ -614,9 +620,7 @@ int confirm_selection(const char* title, const char* confirm)
 
     char* confirm_headers[]  = {  title, "  THIS CAN NOT BE UNDONE.", "", NULL };
     int one_confirm = 0 == stat("/sdcard/clockworkmod/.one_confirm", &info);
-#ifdef BOARD_TOUCH_RECOVERY
     one_confirm = 1;
-#endif 
     if (one_confirm) {
         char* items[] = { "No",
                         confirm, //" Yes -- wipe partition",   // [1]
@@ -648,20 +652,21 @@ int confirm_selection(const char* title, const char* confirm)
 
 extern struct selabel_handle *sehandle;
 int format_device(const char *device, const char *path, const char *fs_type) {
-    Volume* v = volume_for_path(path);
-    if (v == NULL) {
-        // silent failure for sd-ext
-        if (strcmp(path, "/sd-ext") == 0)
-            return -1;
-        LOGE("unknown volume \"%s\"\n", path);
-        return -1;
-    }
     if (is_data_media_volume_path(path)) {
         return format_unknown_device(NULL, path, NULL);
     }
     if (strstr(path, "/data") == path && is_data_media()) {
         return format_unknown_device(NULL, path, NULL);
     }
+
+    Volume* v = volume_for_path(path);
+    if (v == NULL) {
+        // silent failure for sd-ext
+        if (strcmp(path, "/sd-ext") != 0)
+            LOGE("unknown volume '%s'\n", path);
+        return -1;
+    }
+
     if (strcmp(fs_type, "ramdisk") == 0) {
         // you can't format the ramdisk.
         LOGE("can't format_volume \"%s\"", path);
@@ -943,6 +948,9 @@ void show_partition_menu()
                 else
                     ui_print("Done.\n");
                 ignore_data_media_workaround(0);
+                // recreate /data/media with proper permissions
+                ensure_path_mounted("/data");
+                setup_data_media();
             }
         }
         else if (chosen_item < mountable_volumes) {

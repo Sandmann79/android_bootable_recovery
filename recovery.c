@@ -887,8 +887,7 @@ main(int argc, char **argv) {
     sehandle = selabel_open(SELABEL_CTX_FILE, seopts, 1);
 
     if (!sehandle) {
-        fprintf(stderr, "Warning: No file_contexts\n");
-        ui_print("Warning:  No file_contexts\n");
+        LOGI("Warning:  No file_contexts\n");
     }
 
     LOGI("device_recovery_start()\n");
