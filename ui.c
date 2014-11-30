@@ -336,10 +336,9 @@ static void draw_screen_locked(void)
         int j = 0;
         int row = 0;            // current row that we are drawing on
 
-		draw_battery_clock();
-
         if (show_menu) {
 #ifndef BOARD_TOUCH_RECOVERY
+            draw_battery_clock();
             gr_color(MENU_TEXT_COLOR);
             gr_fill(0, (menu_top + menu_sel - menu_show_start) * CHAR_HEIGHT,
                     gr_fb_width(), (menu_top + menu_sel - menu_show_start + 1)*CHAR_HEIGHT+1);
